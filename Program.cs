@@ -2,11 +2,13 @@
 using currys_bot;
 using OpenQA.Selenium.Chrome;
 using HtmlAgilityPack;
+using OpenQA.Selenium;
+using OpenQA.Selenium.Support.UI;
 
 class Program
 {
     static bool isRunning = false;
-    
+
     // apple watches
     // ipads
     // airpods
@@ -21,7 +23,7 @@ class Program
         "https://www.currys.co.uk/search-update-grid?cgid=all-headphones-headphones-tv-audio&prefn1=brand&prefv1=APPLE&srule=Price%20(Low%20to%20High)&start=0&sz=30",
         "https://www.currys.co.uk/search-update-grid?cgid=all-mobile-phones-mobile-phones-phones&prefn1=brand&prefv1=APPLE&srule=Price%20(Low%20to%20High)&start=0&sz=30"
     };
-    
+
     //string productUrls = [];
     static async Task Main(string[] args)
     {
@@ -32,7 +34,7 @@ class Program
                 await DoWork(pUrl);
                 Console.WriteLine("Function executed. Waiting for the next hour...");
             }
-            
+
             await SendInfo("Completed search not waiting for next routine for ");
             await Task.Delay(TimeSpan.FromMinutes(30)); // Wait for 1 hour
         }
@@ -47,18 +49,19 @@ class Program
     {
         if (isRunning)
             return;
-        
+
         Console.WriteLine("Function executed at: " + DateTime.Now);
+
+        var options = new ChromeOptions();
+        options.AddArguments("--log-level=3");
+        var driver = new ChromeDriver(options);
+
         try
         {
             isRunning = true;
 
-            var options = new ChromeOptions();
-            options.AddArguments("--log-level=3");
-            var driver = new ChromeDriver(options);
-
             await SendInfo("Starting search... for " + url);
-            
+
             // load this page url with all products on this search
             driver.Navigate()
                 .GoToUrl(
@@ -73,7 +76,7 @@ class Program
             // load the HTML source code into HtmlAgilityPack
             var htmlDoc = new HtmlDocument();
             htmlDoc.LoadHtml(pageSource);
-            
+
             var newProducts = new List<product>();
 
             // now lets select each product element
@@ -83,7 +86,7 @@ class Program
                 foreach (var productElement in productElements)
                 {
                     var name = productElement.SelectSingleNode(".//h2[@class='pdp-grid-product-name']").InnerHtml;
-                    
+
                     // Assuming you have already loaded the HTML into the 'htmlDoc' variable using HtmlAgilityPack
                     var priceInfoNode = productElement.SelectSingleNode(".//div[@class='price-info ']");
                     if (priceInfoNode != null)
@@ -127,7 +130,7 @@ class Program
             {
                 Console.WriteLine("No product elements found on the page.");
             }
-            
+
             await SendInfo("Successfully checked all products..." + url);
         }
 
@@ -139,31 +142,44 @@ class Program
         }
         finally
         {
+            if (driver != null)
+            {
+                driver.Close();
+            }
+
             isRunning = false;
         }
-        
+
     }
 
     static async Task<bool> CheckIfInStock(string url)
     {
+        var options = new ChromeOptions();
+        options.AddArguments("--log-level=3");
+        var driver = new ChromeDriver(options);
+
         try
         {
-            var options = new ChromeOptions();
-            options.AddArguments("--log-level=3"); 
-            var driver = new ChromeDriver(options);
             driver.Navigate().GoToUrl(url);
             // Wait for 3 seconds
             await Task.Delay(10000);
 
-            driver.Close();
-            
+            // Set up a WebDriverWait with a timeout of, for example, 10 seconds
+            WebDriverWait wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
+
+            // Find the "Accept All Cookies" button by its id
+            var acceptButton = driver.FindElement(By.Id("onetrust-accept-btn-handler"));
+
+            // Click the "Accept All Cookies" button
+            acceptButton.Click();
+
             var htmlDoc = new HtmlDocument();
             htmlDoc.LoadHtml(driver.PageSource);
-            
-            var outofstockbutton = htmlDoc.DocumentNode.SelectSingleNode(".//button[@class='add-to-cart btn cta-primary-btn out-of-stock-btn']");
-            
+
+            bool isOutOfStock = driver.FindElements(By.ClassName("out-of-stock-btn")).Count > 0;
+
             // if this button is null then the product is in stock.
-            if (outofstockbutton == null)
+            if (!isOutOfStock)
             {
                 Console.WriteLine("Product is in stock!");
                 return true;
@@ -175,12 +191,16 @@ class Program
         }
         catch (Exception e)
         {
-            Console.WriteLine($"An error occurred: {e.Message}");
+            await SendInfo("Error occurred..." + url);
+        }
+        finally
+        {
+            driver.Close();
         }
 
         return false;
     }
-    
+
     // send alert to discord webhook
     static async Task SendAlert(string title, string price, string url)
     {
@@ -190,7 +210,7 @@ class Program
         {
             return;
         }
-        
+
         try
         {
             var client = new HttpClient();
@@ -219,10 +239,10 @@ class Program
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"An error occurred: {ex.Message}");
+            await SendInfo("Error occurred..." + url);
         }
     }
-    
+
     static async Task SendInfo(string messege)
     {
         try
@@ -252,7 +272,7 @@ class Program
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"An error occurred: {ex.Message}");
+            await SendInfo("Error occurred...");
         }
     }
 }
