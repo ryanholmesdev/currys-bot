@@ -142,11 +142,6 @@ class Program
         }
         finally
         {
-            if (driver != null)
-            {
-                driver.Close();
-            }
-
             isRunning = false;
         }
 
